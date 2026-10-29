@@ -1,0 +1,7 @@
+# Keep local builds, dependencies and environment files out of the image.
+node_modules
+.next
+.env
+.env.*
+!.env.example
+*.log

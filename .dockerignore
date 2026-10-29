@@ -1,0 +1,13 @@
+# Build context for the backend image (docker build -f backend/Dockerfile .).
+# Never send secrets, private uploads or local dependencies to the image.
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+backend/uploads
+backend/dist
+frontend
+ai-service
+**/__pycache__
+.git
+*.log

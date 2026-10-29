@@ -1,0 +1,16 @@
+# Node
+node_modules/
+backend/uploads/
+dist/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+
+# MacOS
+.DS_Store

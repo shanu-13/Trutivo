@@ -1,0 +1,95 @@
+# Local, production-like stack. Copy .env.example to .env and fill in the secrets first:
+#   cp .env.example .env
+#   docker compose up --build
+# The "migrate" service applies database migrations once, before the backend starts.
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_NAME:-ai_resume_analyzer}
+      MYSQL_USER: ${DB_USER:-resume_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    # Not published to the host by default (a local MySQL may already use 3306).
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["node", "dist/scripts/migrate.js"]
+    environment: &db_env
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-ai_resume_analyzer}
+      DB_USER: ${DB_USER:-resume_app}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  ai_service:
+    build:
+      context: ./ai-service
+    environment:
+      ENVIRONMENT: production
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?set INTERNAL_API_KEY in .env}
+    # Internal only: the browser never calls the AI service.
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      <<: *db_env
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "5000"
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      AI_SERVICE_URL: http://ai_service:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai_service:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The address the browser uses to reach the backend.
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:5000/api}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  # Private resume files and saved exports.
+  uploads:
